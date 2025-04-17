@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'screens/auth/login_screen.dart';
 import 'screens/parent/manage_tasks_screen.dart';
 import 'screens/parent/manage_children_screen.dart';
@@ -15,71 +16,20 @@ import 'models/user.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await Supabase.initialize(
+    url: 'https://zkofeaaggzedjjlallgs.supabase.co',
+    anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inprb2ZlYWFnZ3plZGpqbGFsbGdzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDQ3NjIyNzIsImV4cCI6MjA2MDMzODI3Mn0.E9f0CRwnodO4jKNHYoEktRIafMYkVtOZ6VfMl9OGm9Y',
+  );
+
   final prefs = await SharedPreferences.getInstance();
-  final storage = StorageService(prefs);
-  final auth = AuthService(storage);
-  final tasks = TaskService(storage);
-  final rewards = RewardService(storage);
-
-  // Ensure we have a parent account for testing
-  final testParent = await auth.login('test@example.com', 'password123', UserRole.parent);
-  if (testParent == null) {
-    await auth.createParentAccount(
-      'Test Parent',
-      'test@example.com',
-      'password123',
-    );
-    final parent = await auth.login('test@example.com', 'password123', UserRole.parent);
-    if (parent != null) {
-      await storage.addTestChildren(parent.id);
-      
-      // Create test tasks
-      final children = await storage.getChildrenForParent(parent.id);
-      if (children.isNotEmpty) {
-        await tasks.createTask(
-          title: 'Clean your room',
-          description: 'Make your bed and organize your toys',
-          pbuckValue: 50,
-          parentId: parent.id,
-          childIds: children.map((c) => c.id).toList(),
-          dueDate: DateTime.now().add(const Duration(days: 1)),
-        );
-
-        await tasks.createTask(
-          title: 'Do your homework',
-          description: 'Complete all school assignments for tomorrow',
-          pbuckValue: 30,
-          parentId: parent.id,
-          childIds: children.map((c) => c.id).toList(),
-          dueDate: DateTime.now().add(const Duration(days: 1)),
-        );
-
-        // Create test rewards
-        await rewards.createReward(
-          title: 'Extra TV time',
-          description: '30 minutes of additional TV time',
-          pbuckCost: 100,
-          parentId: parent.id,
-        );
-
-        await rewards.createReward(
-          title: 'Ice cream',
-          description: 'One ice cream of your choice',
-          pbuckCost: 50,
-          parentId: parent.id,
-        );
-      }
-    }
-  }
-  await storage.clearCurrentUser();
+  final storageService = StorageService(prefs);
 
   runApp(
     MultiProvider(
       providers: [
-        Provider<StorageService>.value(value: storage),
-        Provider<AuthService>.value(value: auth),
-        Provider<TaskService>.value(value: tasks),
-        Provider<RewardService>.value(value: rewards),
+        Provider<StorageService>.value(value: storageService),
+        Provider<AuthService>.value(value: AuthService(storageService)),
+        Provider<TaskService>.value(value: TaskService(storageService)),
       ],
       child: const MyApp(),
     ),

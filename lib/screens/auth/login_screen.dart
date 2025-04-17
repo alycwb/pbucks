@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' hide User;
 import '../../models/user.dart';
 import '../../services/auth_service.dart';
-import 'package:provider/provider.dart';
-import '../../services/storage_service.dart';
+import 'dart:html' as html;
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -13,75 +14,211 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
-  UserRole _selectedRole = UserRole.parent;
+  final _registerFormKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _registerNameController = TextEditingController();
+  final _registerEmailController = TextEditingController();
+  final _registerPasswordController = TextEditingController();
   bool _obscurePassword = true;
+  UserRole _selectedRole = UserRole.parent;
+  UserRole _registerRole = UserRole.parent;
+  List<User> _parents = [];
+  User? _selectedParent;
+  String? _parentId;
 
   @override
   void initState() {
     super.initState();
+    logToLocalStorage('App iniciado');
     _setCredentialsForRole(UserRole.parent);
+    _loadParents();
+  }
+
+  Future<void> _loadParents() async {
+    if (!mounted) return;
+    final authService = Provider.of<AuthService>(context, listen: false);
+    final parents = await authService.getAllParents();
+    setState(() {
+      _parents = parents;
+      if (parents.isNotEmpty) {
+        _selectedParent = parents.first;
+        _parentId = parents.first.id;
+      }
+    });
   }
 
   void _setCredentialsForRole(UserRole role) {
-    if (role == UserRole.parent) {
-      _emailController.text = 'test@example.com';
-      _passwordController.text = 'password123';
-    } else {
-      _emailController.text = 'joao@test.com';
-      _passwordController.text = '123456';
-    }
+    setState(() {
+      if (role == UserRole.parent) {
+        _emailController.text = 'alysson.isidro@gmail.com';
+        _passwordController.text = '123456';
+      } else {
+        _emailController.text = 'joao@test.com';
+        _passwordController.text = '123456';
+      }
+    });
   }
 
-  @override
-  void dispose() {
-    _emailController.dispose();
-    _passwordController.dispose();
-    super.dispose();
-  }
-
-  void _handleLogin() async {
+  Future<void> _handleLogin() async {
     if (_formKey.currentState!.validate()) {
       final authService = Provider.of<AuthService>(context, listen: false);
-      
-      print('Attempting login with:');
-      print('Email: ${_emailController.text}');
-      print('Password: ${_passwordController.text}');
-      print('Role: $_selectedRole');
-      
-      final user = await authService.login(
-        _emailController.text,
-        _passwordController.text,
-        _selectedRole,
-      );
+      try {
+        final user = await authService.login(
+          _emailController.text,
+          _passwordController.text,
+          _selectedRole,
+        );
 
-      if (user != null) {
-        print('Login successful for user: ${user.email}');
-        if (context.mounted) {
-          if (user.role == UserRole.parent) {
-            final storageService = Provider.of<StorageService>(context, listen: false);
-            await storageService.setCurrentUser(user);
-            await storageService.addTestChildren(user.id);
-            Navigator.pushReplacementNamed(context, '/parent_dashboard');
-          } else {
-            final storageService = Provider.of<StorageService>(context, listen: false);
-            await storageService.setCurrentUser(user);
-            if (context.mounted) {
+        if (user != null) {
+          if (context.mounted) {
+            if (user.role == UserRole.parent) {
+              Navigator.pushReplacementNamed(context, '/parent_dashboard');
+            } else {
               Navigator.pushReplacementNamed(context, '/child_dashboard');
             }
           }
+        } else {
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Invalid credentials')),
+            );
+          }
         }
-      } else {
-        print('Login failed - invalid credentials');
+      } catch (e) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Invalid credentials'),
-            backgroundColor: Colors.red,
-          ),
+          SnackBar(content: Text('Error: ${e.toString()}')),
         );
       }
     }
+  }
+
+  void _showRegisterDialog() {
+    final _registerFormKey = GlobalKey<FormState>();
+    final _registerNameController = TextEditingController();
+    final _registerEmailController = TextEditingController();
+    final _registerPasswordController = TextEditingController();
+    UserRole _registerRole = UserRole.parent;
+    String? _parentId;
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Register'),
+          content: SizedBox(
+            width: 450,
+            height: 280,
+            child: Form(
+              key: _registerFormKey,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextFormField(
+                      controller: _registerNameController,
+                      decoration: const InputDecoration(
+                        labelText: 'Name',
+                        prefixIcon: Icon(Icons.person),
+                      ),
+                      validator: (value) => value == null || value.isEmpty ? 'Enter your name' : null,
+                    ),
+                    const SizedBox(height: 16),
+                    TextFormField(
+                      controller: _registerEmailController,
+                      decoration: const InputDecoration(
+                        labelText: 'Email',
+                        prefixIcon: Icon(Icons.email),
+                      ),
+                      validator: (value) => value == null || value.isEmpty ? 'Enter your email' : null,
+                    ),
+                    const SizedBox(height: 16),
+                    TextFormField(
+                      controller: _registerPasswordController,
+                      decoration: const InputDecoration(
+                        labelText: 'Password',
+                        prefixIcon: Icon(Icons.lock),
+                      ),
+                      obscureText: true,
+                      validator: (value) => value == null || value.isEmpty ? 'Enter your password' : null,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                if (_registerFormKey.currentState!.validate()) {
+                  final authService = Provider.of<AuthService>(context, listen: false);
+                  try {
+                    logToLocalStorage('Iniciando cadastro para: ${_registerEmailController.text}');
+                    await authService.register(
+                      name: _registerNameController.text,
+                      email: _registerEmailController.text,
+                      password: _registerPasswordController.text,
+                      role: UserRole.parent,
+                    );
+                    logToLocalStorage('Cadastro realizado: ${_registerEmailController.text} (parent)');
+                    if (context.mounted) {
+                      Navigator.of(context).pop();
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Registration successful!')),
+                      );
+                    }
+                  } catch (e) {
+                    logToLocalStorage('Erro no cadastro: ${e.toString()}');
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Registration failed: ${e.toString()}'),
+                        backgroundColor: Colors.red,
+                      ),
+                    );
+                  }
+                }
+              },
+              child: const Text('Register'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _showLogDialog() {
+    final log = getLocalStorageLog();
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Log do sistema'),
+        content: SizedBox(
+          width: 400,
+          child: SingleChildScrollView(
+            child: SelectableText(log.isEmpty ? 'Nenhum log.' : log),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Fechar'),
+          ),
+          TextButton(
+            onPressed: () {
+              html.window.navigator.clipboard?.writeText(log);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Log copiado para a área de transferência!')),
+              );
+            },
+            child: const Text('Copiar log'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -129,80 +266,109 @@ class _LoginScreenState extends State<LoginScreen> {
                               onSelectionChanged: (Set<UserRole> newSelection) {
                                 setState(() {
                                   _selectedRole = newSelection.first;
-                                  _setCredentialsForRole(newSelection.first);
+                                  _setCredentialsForRole(_selectedRole);
                                 });
                               },
                             ),
-                            const SizedBox(height: 24),
-                            SizedBox(
-                              width: 300,
-                              child: TextFormField(
-                                controller: _emailController,
-                                decoration: const InputDecoration(
-                                  labelText: 'Email',
-                                  prefixIcon: Icon(Icons.email),
-                                  border: OutlineInputBorder(),
-                                ),
-                                keyboardType: TextInputType.emailAddress,
-                                validator: (value) {
-                                  if (value == null || value.isEmpty) {
-                                    return 'Please enter your email';
-                                  }
-                                  return null;
-                                },
+                            const SizedBox(height: 16),
+                            TextFormField(
+                              controller: _emailController,
+                              decoration: const InputDecoration(
+                                labelText: 'Email',
+                                prefixIcon: Icon(Icons.email),
                               ),
+                              validator: (value) {
+                                if (value == null || value.isEmpty) {
+                                  return 'Please enter your email';
+                                }
+                                return null;
+                              },
                             ),
                             const SizedBox(height: 16),
-                            SizedBox(
-                              width: 300,
-                              child: TextFormField(
-                                controller: _passwordController,
-                                decoration: InputDecoration(
-                                  labelText: 'Password',
-                                  prefixIcon: const Icon(Icons.lock),
-                                  border: const OutlineInputBorder(),
-                                  suffixIcon: IconButton(
-                                    icon: Icon(
-                                      _obscurePassword ? Icons.visibility_off : Icons.visibility,
-                                    ),
-                                    onPressed: () {
-                                      setState(() {
-                                        _obscurePassword = !_obscurePassword;
-                                      });
-                                    },
+                            TextFormField(
+                              controller: _passwordController,
+                              decoration: InputDecoration(
+                                labelText: 'Password',
+                                prefixIcon: const Icon(Icons.lock),
+                                suffixIcon: IconButton(
+                                  icon: Icon(
+                                    _obscurePassword ? Icons.visibility : Icons.visibility_off,
                                   ),
+                                  onPressed: () {
+                                    setState(() {
+                                      _obscurePassword = !_obscurePassword;
+                                    });
+                                  },
                                 ),
-                                obscureText: _obscurePassword,
-                                validator: (value) {
-                                  if (value == null || value.isEmpty) {
-                                    return 'Please enter your password';
-                                  }
-                                  return null;
-                                },
                               ),
+                              obscureText: _obscurePassword,
+                              validator: (value) {
+                                if (value == null || value.isEmpty) {
+                                  return 'Please enter your password';
+                                }
+                                return null;
+                              },
                             ),
                             const SizedBox(height: 24),
-                            SizedBox(
-                              width: 300,
-                              child: ElevatedButton(
-                                onPressed: _handleLogin,
-                                style: ElevatedButton.styleFrom(
-                                  padding: const EdgeInsets.symmetric(vertical: 16),
-                                  backgroundColor: Colors.blue,
-                                  foregroundColor: Colors.white,
-                                  elevation: 2,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(8),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: ElevatedButton(
+                                    onPressed: _handleLogin,
+                                    child: const Text('Login'),
                                   ),
                                 ),
-                                child: const Text(
-                                  'Login',
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.bold,
+                              ],
+                            ),
+                            const SizedBox(height: 16),
+                            TextButton(
+                              onPressed: _showRegisterDialog,
+                              child: const Text('Create Account'),
+                            ),
+                            const SizedBox(height: 8),
+                            TextButton(
+                              onPressed: _showLogDialog,
+                              child: const Text('Ver log do sistema'),
+                            ),
+                            TextButton(
+                              onPressed: () async {
+                                final confirmed = await showDialog<bool>(
+                                  context: context,
+                                  builder: (context) => AlertDialog(
+                                    title: const Text('Confirmação'),
+                                    content: const Text('Tem certeza que deseja limpar TODOS os usuários da base?'),
+                                    actions: [
+                                      TextButton(
+                                        onPressed: () => Navigator.of(context).pop(false),
+                                        child: const Text('Cancelar'),
+                                      ),
+                                      ElevatedButton(
+                                        onPressed: () => Navigator.of(context).pop(true),
+                                        child: const Text('Confirmar'),
+                                      ),
+                                    ],
                                   ),
-                                ),
-                              ),
+                                );
+                                if (confirmed == true) {
+                                  try {
+                                    await Supabase.instance.client.from('users').delete().gt('created_at', '1900-01-01');
+                                    logToLocalStorage('Base de usuários limpa com sucesso!');
+                                    if (context.mounted) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(content: Text('Base de usuários limpa com sucesso!')),
+                                      );
+                                    }
+                                  } catch (e) {
+                                    print('Erro ao limpar base: ' + e.toString());
+                                    logToLocalStorage('Erro ao limpar base: ${e.toString()}');
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(content: Text('Erro ao limpar base: ${e.toString()}')),
+                                    );
+                                  }
+                                }
+                              },
+                              style: TextButton.styleFrom(foregroundColor: Colors.red),
+                              child: const Text('Limpar base de usuários'),
                             ),
                           ],
                         ),
@@ -217,4 +383,18 @@ class _LoginScreenState extends State<LoginScreen> {
       ),
     );
   }
+}
+
+// Função para salvar logs em localStorage
+void logToLocalStorage(String message) {
+  final now = DateTime.now();
+  final formattedDate = '[${now.toIso8601String()}]';
+  final log = '$formattedDate $message';
+  final currentLogs = html.window.localStorage['app_logs'] ?? '';
+  html.window.localStorage['app_logs'] = '$currentLogs\n$log';
+}
+
+// Função para recuperar logs do localStorage
+String getLocalStorageLog() {
+  return html.window.localStorage['app_logs'] ?? '';
 } 
